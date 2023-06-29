@@ -1,19 +1,22 @@
 package formstr
 
 import (
+	"fmt"
 	"io"
 	"net/url"
+	"reflect"
 	"sort"
+	"strconv"
 )
 
 const (
 	defaultFormURLEncoderBufferSize = 512
 )
 
-// FormURLEncoder encodes io.Reader entries into application/x-www-form-urlencoded Content-Type
+// FormURLEncoder encodes entries (string, int, and io.Reader) into application/x-www-form-urlencoded Content-Type
 type FormURLEncoder struct {
 	bufferSize int
-	entries    map[string][]io.Reader
+	entries    map[string][]any
 }
 
 // NewFormURLEncoder creates a FormURLEncoder with the default buffer size
@@ -25,12 +28,20 @@ func NewFormURLEncoder() *FormURLEncoder {
 func NewFormURLEncoderN(bufferSize int) *FormURLEncoder {
 	return &FormURLEncoder{
 		bufferSize: bufferSize,
-		entries:    make(map[string][]io.Reader),
+		entries:    make(map[string][]any),
 	}
 }
 
-func (fue *FormURLEncoder) Add(key string, value io.Reader) {
-	fue.entries[key] = append(fue.entries[key], value)
+func (f *FormURLEncoder) AddString(key string, value string) {
+	f.entries[key] = append(f.entries[key], value)
+}
+
+func (f *FormURLEncoder) AddInt(key string, value int) {
+	f.entries[key] = append(f.entries[key], value)
+}
+
+func (f *FormURLEncoder) AddReader(key string, value io.Reader) {
+	f.entries[key] = append(f.entries[key], value)
 }
 
 // Encode encodes the contents of FormURLEncoder entries into w
@@ -43,7 +54,7 @@ func (fue *FormURLEncoder) Encode(w io.Writer) error {
 
 	isFirstEntry := true
 	for _, key := range keys {
-		for _, reader := range fue.entries[key] {
+		for valIdx, val := range fue.entries[key] {
 			err := func() error {
 				if isFirstEntry {
 					isFirstEntry = false
@@ -65,30 +76,48 @@ func (fue *FormURLEncoder) Encode(w io.Writer) error {
 					return err
 				}
 
-				pr, pw := io.Pipe()
+				switch v := val.(type) {
+				case io.Reader:
+					pr, pw := io.Pipe()
 
-				go func() {
-					for {
-						buf := make([]byte, fue.bufferSize)
-						n, err := reader.Read(buf)
-						if err != nil {
-							//nolint
-							pw.CloseWithError(err)
-							return
-						}
+					go func() {
+						for {
+							buf := make([]byte, defaultFormURLEncoderBufferSize)
+							n, err := v.Read(buf)
+							if err != nil {
+								//nolint
+								pw.CloseWithError(err)
+								return
+							}
 
-						_, err = pw.Write([]byte(url.QueryEscape(string(buf[:n]))))
-						if err != nil {
-							//nolint
-							pw.CloseWithError(err)
-							return
+							_, err = pw.Write([]byte(url.QueryEscape(string(buf[:n]))))
+							if err != nil {
+								//nolint
+								pw.CloseWithError(err)
+								return
+							}
 						}
+					}()
+
+					_, err = io.Copy(w, pr)
+					if err != nil {
+						return err
 					}
-				}()
 
-				_, err = io.Copy(w, pr)
-				if err != nil {
-					return err
+				case string:
+					_, err = w.Write([]byte(url.QueryEscape(v)))
+					if err != nil {
+						return err
+					}
+
+				case int:
+					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(v))))
+					if err != nil {
+						return err
+					}
+
+				default:
+					return fmt.Errorf("invalid form url encoder value type '%s' for key %s[%d]", reflect.TypeOf(v).String(), key, valIdx)
 				}
 
 				return nil

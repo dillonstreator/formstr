@@ -1,10 +1,14 @@
 package formstr
 
 import (
+	"bytes"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -14,30 +18,19 @@ import (
 func TestFormURLEncoder_Encode(t *testing.T) {
 	assert := assert.New(t)
 
+	docBytes := make([]byte, 50)
+	_, err := rand.Read(docBytes)
+	assert.NoError(err)
+
 	fue := NewFormURLEncoder()
-	fue.Add("a", strings.NewReader("123"))
-	fue.Add("z", strings.NewReader("789"))
-	fue.Add("b", strings.NewReader("456"))
+	fue.AddReader("doc", bytes.NewReader(docBytes))
+	fue.AddInt("count", 10)
+	fue.AddString("str!", "hello world!")
 
-	var called bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-
-		b, err := io.ReadAll(r.Body)
-		assert.NoError(err)
-
-		assert.Equal("a=123&b=456&z=789", string(b))
-	}))
-	defer server.Close()
-
-	req, err := http.NewRequest(http.MethodPost, server.URL, fue.EncodeR())
+	b := bytes.NewBuffer(nil)
+	err = fue.Encode(b)
 	assert.NoError(err)
-
-	res, err := server.Client().Do(req)
-	assert.NoError(err)
-
-	assert.Equal(http.StatusOK, res.StatusCode)
-	assert.True(called)
+	assert.Equal(fmt.Sprintf("count=10&doc=%s&%s=%s", url.QueryEscape(string(docBytes)), url.QueryEscape("str!"), url.QueryEscape("hello world!")), b.String())
 }
 
 func TestFormURLEncoder_Encode_error(t *testing.T) {
@@ -46,9 +39,9 @@ func TestFormURLEncoder_Encode_error(t *testing.T) {
 	errReading := errors.New("reading")
 
 	fue := NewFormURLEncoder()
-	fue.Add("a", strings.NewReader("123"))
-	fue.Add("z", strings.NewReader("789"))
-	fue.Add("b", &errorReader{errReading})
+	fue.AddReader("a", strings.NewReader("123"))
+	fue.AddReader("z", strings.NewReader("789"))
+	fue.AddReader("b", &errorReader{errReading})
 
 	var called bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
