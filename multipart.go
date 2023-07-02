@@ -38,9 +38,10 @@ func CreateMultipartFormReader(entries []MultipartFormEntry) (io.Reader, string)
 	go func() {
 		var err error
 		defer func() {
-			// conditionally close the multipart writer so that
+			// Conditionally close the multipart writer so that
 			// in the event of an error, the contents of the reader are no longer
-			// valid multipart/form-data as it will not contain the closing boundary
+			// valid multipart/form-data as it will not contain the closing boundary.
+			// This will ensure that not that both the caller and callee fail processing together.
 			// https://www.rfc-editor.org/rfc/rfc2046#section-5.1
 			var closeErr error
 			if err == nil {
