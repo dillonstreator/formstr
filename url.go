@@ -1,6 +1,7 @@
 package formstr
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/url"
@@ -45,7 +46,7 @@ func (f *FormURLEncoder) AddReader(key string, value io.Reader) {
 }
 
 // Encode encodes the contents of FormURLEncoder entries into w
-func (fue *FormURLEncoder) Encode(w io.Writer) error {
+func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 	keys := make([]string, 0, len(fue.entries))
 	for k := range fue.entries {
 		keys = append(keys, k)
@@ -82,20 +83,28 @@ func (fue *FormURLEncoder) Encode(w io.Writer) error {
 
 					go func() {
 						for {
-							buf := make([]byte, defaultFormURLEncoderBufferSize)
-							n, err := v.Read(buf)
-							if err != nil {
-								//nolint
-								pw.CloseWithError(err)
+							select {
+							case <-ctx.Done():
+								pw.CloseWithError(ctx.Err())
 								return
+
+							default:
+								buf := make([]byte, defaultFormURLEncoderBufferSize)
+								n, err := v.Read(buf)
+								if err != nil {
+									//nolint
+									pw.CloseWithError(err)
+									return
+								}
+
+								_, err = pw.Write([]byte(url.QueryEscape(string(buf[:n]))))
+								if err != nil {
+									//nolint
+									pw.CloseWithError(err)
+									return
+								}
 							}
 
-							_, err = pw.Write([]byte(url.QueryEscape(string(buf[:n]))))
-							if err != nil {
-								//nolint
-								pw.CloseWithError(err)
-								return
-							}
 						}
 					}()
 
@@ -131,11 +140,11 @@ func (fue *FormURLEncoder) Encode(w io.Writer) error {
 	return nil
 }
 
-func (fue *FormURLEncoder) EncodeR() io.Reader {
+func (fue *FormURLEncoder) EncodeR(ctx context.Context) io.Reader {
 	pr, pw := io.Pipe()
 
 	go func() {
-		err := fue.Encode(pw)
+		err := fue.Encode(ctx, pw)
 		//nolint
 		pw.CloseWithError(err)
 	}()
