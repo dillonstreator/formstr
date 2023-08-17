@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -50,7 +51,7 @@ func TestFormURLEncoder_Encode(t *testing.T) {
 	b := bytes.NewBuffer(nil)
 	err = fue.Encode(context.Background(), b)
 	assert.NoError(err)
-	assert.Equal(fmt.Sprintf("count=10&doc=%s&%s=%s", url.QueryEscape(string(docBytes)), url.QueryEscape("str!"), url.QueryEscape("hello world!")), b.String())
+	assert.Equal(fmt.Sprintf("count=10&doc=%s&%s=%s", url.QueryEscape(base64.StdEncoding.EncodeToString(docBytes)), url.QueryEscape("str!"), url.QueryEscape("hello world!")), b.String())
 }
 
 func TestFormURLEncoder_Encode_context_cancel_propagation(t *testing.T) {
@@ -91,7 +92,7 @@ func TestFormURLEncoder_Encode_error(t *testing.T) {
 		b, err := io.ReadAll(r.Body)
 		assert.ErrorIs(err, io.ErrUnexpectedEOF)
 
-		assert.Equal("a=123&b=", string(b))
+		assert.Equal("a=MTIz&b=", string(b))
 	}))
 	defer server.Close()
 
