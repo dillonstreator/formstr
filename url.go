@@ -79,13 +79,13 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 					return err
 				}
 
-				switch r := val.(type) {
+				switch v := val.(type) {
 				case io.Reader:
 					pr, pw := io.Pipe()
 					encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(pw))
 
 					go func() {
-						_, err := io.Copy(encoder, newContextReader(ctx, r))
+						_, err := io.Copy(encoder, newContextReader(ctx, v))
 						err = errors.Join(err, encoder.Close())
 
 						if err != nil {
@@ -103,19 +103,19 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 					}
 
 				case string:
-					_, err = w.Write([]byte(url.QueryEscape(r)))
+					_, err = w.Write([]byte(url.QueryEscape(v)))
 					if err != nil {
 						return err
 					}
 
 				case int:
-					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(r))))
+					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(v))))
 					if err != nil {
 						return err
 					}
 
 				default:
-					return fmt.Errorf("invalid form url encoder value type '%s' for key %s[%d]", reflect.TypeOf(r).String(), key, valIdx)
+					return fmt.Errorf("invalid form url encoder value type '%s' for key %s[%d]", reflect.TypeOf(v).String(), key, valIdx)
 				}
 
 				return nil
