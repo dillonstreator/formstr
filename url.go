@@ -79,13 +79,13 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 					return err
 				}
 
-				switch v := val.(type) {
+				switch r := val.(type) {
 				case io.Reader:
 					pr, pw := io.Pipe()
-					encoder := base64.NewEncoder(base64.StdEncoding, &urlQueryEscapeWriter{pw})
+					encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(pw))
 
 					go func() {
-						err := Copy(ctx, encoder, v)
+						_, err := io.Copy(encoder, newContextReader(ctx, r))
 						err = errors.Join(err, encoder.Close())
 
 						if err != nil {
@@ -103,19 +103,19 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 					}
 
 				case string:
-					_, err = w.Write([]byte(url.QueryEscape(v)))
+					_, err = w.Write([]byte(url.QueryEscape(r)))
 					if err != nil {
 						return err
 					}
 
 				case int:
-					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(v))))
+					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(r))))
 					if err != nil {
 						return err
 					}
 
 				default:
-					return fmt.Errorf("invalid form url encoder value type '%s' for key %s[%d]", reflect.TypeOf(v).String(), key, valIdx)
+					return fmt.Errorf("invalid form url encoder value type '%s' for key %s[%d]", reflect.TypeOf(r).String(), key, valIdx)
 				}
 
 				return nil
@@ -141,28 +141,34 @@ func (fue *FormURLEncoder) EncodeR(ctx context.Context) io.Reader {
 	return pr
 }
 
-type readerFunc func(p []byte) (n int, err error)
-
-func (rf readerFunc) Read(p []byte) (n int, err error) { return rf(p) }
-
-func Copy(ctx context.Context, dst io.Writer, src io.Reader) error {
-	_, err := io.Copy(dst, readerFunc(func(p []byte) (int, error) {
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		default:
-			return src.Read(p)
-		}
-	}))
-	return err
+type urlQueryEscapeWriter struct {
+	w io.Writer
 }
 
-type urlQueryEscapeWriter struct {
-	io.Writer
+func newURLQueryEscapeWriter(w io.Writer) *urlQueryEscapeWriter {
+	return &urlQueryEscapeWriter{w}
 }
 
 func (w *urlQueryEscapeWriter) Write(p []byte) (int, error) {
 	escaped := url.QueryEscape(string(p))
 
-	return w.Writer.Write([]byte(escaped))
+	return w.w.Write([]byte(escaped))
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func newContextReader(ctx context.Context, r io.Reader) *contextReader {
+	return &contextReader{ctx, r}
+}
+
+func (r *contextReader) Read(p []byte) (int, error) {
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	default:
+		return r.r.Read(p)
+	}
 }
