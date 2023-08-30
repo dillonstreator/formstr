@@ -47,11 +47,12 @@ func TestFormURLEncoder_Encode(t *testing.T) {
 	fue.AddReader("doc", bytes.NewReader(docBytes))
 	fue.AddInt("count", 10)
 	fue.AddString("str!", "hello world!")
+	fue.AddBool("ok", true)
 
 	b := bytes.NewBuffer(nil)
 	err = fue.Encode(context.Background(), b)
 	assert.NoError(err)
-	assert.Equal(fmt.Sprintf("count=10&doc=%s&%s=%s", url.QueryEscape(base64.StdEncoding.EncodeToString(docBytes)), url.QueryEscape("str!"), url.QueryEscape("hello world!")), b.String())
+	assert.Equal(fmt.Sprintf("count=10&doc=%s&ok=true&%s=%s", url.QueryEscape(base64.StdEncoding.EncodeToString(docBytes)), url.QueryEscape("str!"), url.QueryEscape("hello world!")), b.String())
 }
 
 func TestFormURLEncoder_Encode_context_cancel_propagation(t *testing.T) {

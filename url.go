@@ -3,7 +3,6 @@ package formstr
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -12,26 +11,15 @@ import (
 	"strconv"
 )
 
-const (
-	defaultFormURLEncoderBufferSize = 512
-)
-
 // FormURLEncoder encodes entries (string, int, and io.Reader) into application/x-www-form-urlencoded Content-Type
 type FormURLEncoder struct {
-	bufferSize int
-	entries    map[string][]any
+	entries map[string][]any
 }
 
 // NewFormURLEncoder creates a FormURLEncoder with the default buffer size
 func NewFormURLEncoder() *FormURLEncoder {
-	return NewFormURLEncoderN(defaultFormURLEncoderBufferSize)
-}
-
-// NewFormURLEncoderN creates a FormURLEncoder with a user provided buffer size
-func NewFormURLEncoderN(bufferSize int) *FormURLEncoder {
 	return &FormURLEncoder{
-		bufferSize: bufferSize,
-		entries:    make(map[string][]any),
+		entries: make(map[string][]any),
 	}
 }
 
@@ -40,6 +28,10 @@ func (f *FormURLEncoder) AddString(key string, value string) {
 }
 
 func (f *FormURLEncoder) AddInt(key string, value int) {
+	f.entries[key] = append(f.entries[key], value)
+}
+
+func (f *FormURLEncoder) AddBool(key string, value bool) {
 	f.entries[key] = append(f.entries[key], value)
 }
 
@@ -81,23 +73,14 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 
 				switch v := val.(type) {
 				case io.Reader:
-					pr, pw := io.Pipe()
-					encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(pw))
+					encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(w))
 
-					go func() {
-						_, err := io.Copy(encoder, newContextReader(ctx, v))
-						err = errors.Join(err, encoder.Close())
+					_, err := io.Copy(encoder, newContextReader(ctx, v))
+					if err != nil {
+						return err
+					}
 
-						if err != nil {
-							//nolint
-							pw.CloseWithError(err)
-						} else {
-							//nolint
-							pw.Close()
-						}
-					}()
-
-					_, err = io.Copy(w, pr)
+					err = encoder.Close()
 					if err != nil {
 						return err
 					}
@@ -110,6 +93,12 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 
 				case int:
 					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(v))))
+					if err != nil {
+						return err
+					}
+
+				case bool:
+					_, err = w.Write([]byte(url.QueryEscape(strconv.FormatBool(v))))
 					if err != nil {
 						return err
 					}
