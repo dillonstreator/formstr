@@ -44,10 +44,10 @@ func TestFormURLEncoder_Encode(t *testing.T) {
 	assert.NoError(err)
 
 	fue := NewFormURLEncoder()
-	fue.AddReader("doc", bytes.NewReader(docBytes))
-	fue.AddInt("count", 10)
-	fue.AddString("str!", "hello world!")
-	fue.AddBool("ok", true)
+	fue.Add("doc", NewFormURLEncoderValueReader(bytes.NewReader(docBytes)))
+	fue.Add("count", NewFormURLEncoderValueInt(10))
+	fue.Add("str!", NewFormURLEncoderValueString("hello world!"))
+	fue.Add("ok", NewFormURLEncoderValueBool(true))
 
 	b := bytes.NewBuffer(nil)
 	err = fue.Encode(context.Background(), b)
@@ -63,9 +63,9 @@ func TestFormURLEncoder_Encode_context_cancel_propagation(t *testing.T) {
 	assert.NoError(err)
 
 	fue := NewFormURLEncoder()
-	fue.AddReader("doc", &slowReader{bytes.NewReader(docBytes), 1, time.Millisecond * 10})
-	fue.AddInt("count", 10)
-	fue.AddString("str!", "hello world!")
+	fue.Add("doc", NewFormURLEncoderValueReader(&slowReader{bytes.NewReader(docBytes), 1, time.Millisecond * 10}))
+	fue.Add("count", NewFormURLEncoderValueInt(10))
+	fue.Add("str!", NewFormURLEncoderValueString("hello world!"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	cancel()
@@ -82,9 +82,9 @@ func TestFormURLEncoder_Encode_error(t *testing.T) {
 	errReading := errors.New("reading")
 
 	fue := NewFormURLEncoder()
-	fue.AddReader("a", strings.NewReader("123"))
-	fue.AddReader("z", strings.NewReader("789"))
-	fue.AddReader("b", &errorReader{errReading})
+	fue.Add("a", NewFormURLEncoderValueReader(strings.NewReader("123")))
+	fue.Add("z", NewFormURLEncoderValueReader(strings.NewReader("789")))
+	fue.Add("b", NewFormURLEncoderValueReader(&errorReader{errReading}))
 
 	var called bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

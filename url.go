@@ -3,39 +3,29 @@ package formstr
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/url"
-	"reflect"
 	"sort"
 	"strconv"
 )
 
+type FormURLValueEncoder interface {
+	Encode(ctx context.Context, w io.Writer) error
+}
+
 // FormURLEncoder encodes entries (string, int, and io.Reader) into application/x-www-form-urlencoded Content-Type
 type FormURLEncoder struct {
-	entries map[string][]any
+	entries map[string][]FormURLValueEncoder
 }
 
 // NewFormURLEncoder creates a FormURLEncoder with the default buffer size
 func NewFormURLEncoder() *FormURLEncoder {
 	return &FormURLEncoder{
-		entries: make(map[string][]any),
+		entries: make(map[string][]FormURLValueEncoder),
 	}
 }
 
-func (f *FormURLEncoder) AddString(key string, value string) {
-	f.entries[key] = append(f.entries[key], value)
-}
-
-func (f *FormURLEncoder) AddInt(key string, value int) {
-	f.entries[key] = append(f.entries[key], value)
-}
-
-func (f *FormURLEncoder) AddBool(key string, value bool) {
-	f.entries[key] = append(f.entries[key], value)
-}
-
-func (f *FormURLEncoder) AddReader(key string, value io.Reader) {
+func (f *FormURLEncoder) Add(key string, value FormURLValueEncoder) {
 	f.entries[key] = append(f.entries[key], value)
 }
 
@@ -49,7 +39,7 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 
 	isFirstEntry := true
 	for _, key := range keys {
-		for valIdx, val := range fue.entries[key] {
+		for _, val := range fue.entries[key] {
 			err := func() error {
 				if isFirstEntry {
 					isFirstEntry = false
@@ -71,40 +61,9 @@ func (fue *FormURLEncoder) Encode(ctx context.Context, w io.Writer) error {
 					return err
 				}
 
-				switch v := val.(type) {
-				case io.Reader:
-					encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(w))
-
-					_, err := io.Copy(encoder, newContextReader(ctx, v))
-					if err != nil {
-						return err
-					}
-
-					err = encoder.Close()
-					if err != nil {
-						return err
-					}
-
-				case string:
-					_, err = w.Write([]byte(url.QueryEscape(v)))
-					if err != nil {
-						return err
-					}
-
-				case int:
-					_, err = w.Write([]byte(url.QueryEscape(strconv.Itoa(v))))
-					if err != nil {
-						return err
-					}
-
-				case bool:
-					_, err = w.Write([]byte(url.QueryEscape(strconv.FormatBool(v))))
-					if err != nil {
-						return err
-					}
-
-				default:
-					return fmt.Errorf("invalid form url encoder value type '%s' for key %s[%d]", reflect.TypeOf(v).String(), key, valIdx)
+				err = val.Encode(ctx, w)
+				if err != nil {
+					return err
 				}
 
 				return nil
@@ -128,6 +87,72 @@ func (fue *FormURLEncoder) EncodeR(ctx context.Context) io.Reader {
 	}()
 
 	return pr
+}
+
+type FormURLEncoderValueReader struct {
+	r io.Reader
+}
+
+func NewFormURLEncoderValueReader(r io.Reader) *FormURLEncoderValueReader {
+	return &FormURLEncoderValueReader{r}
+}
+
+func (f *FormURLEncoderValueReader) Encode(ctx context.Context, w io.Writer) error {
+	encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(w))
+
+	_, err := io.Copy(encoder, newContextReader(ctx, f.r))
+	if err != nil {
+		return err
+	}
+
+	err = encoder.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type FormURLEncoderValueString struct {
+	s string
+}
+
+func NewFormURLEncoderValueString(s string) *FormURLEncoderValueString {
+	return &FormURLEncoderValueString{s}
+}
+
+func (f *FormURLEncoderValueString) Encode(ctx context.Context, w io.Writer) error {
+	_, err := w.Write([]byte(url.QueryEscape(f.s)))
+
+	return err
+}
+
+type FormURLEncoderValueInt struct {
+	i int
+}
+
+func NewFormURLEncoderValueInt(i int) *FormURLEncoderValueInt {
+	return &FormURLEncoderValueInt{i}
+}
+
+func (f *FormURLEncoderValueInt) Encode(ctx context.Context, w io.Writer) error {
+	_, err := w.Write([]byte(strconv.Itoa(f.i)))
+
+	return err
+}
+
+type FormURLEncoderValueBool struct {
+	b bool
+}
+
+func NewFormURLEncoderValueBool(b bool) *FormURLEncoderValueBool {
+	return &FormURLEncoderValueBool{b}
+}
+
+func (f *FormURLEncoderValueBool) Encode(ctx context.Context, w io.Writer) error {
+	_, err := w.Write([]byte(strconv.FormatBool(f.b)))
+
+	return err
 }
 
 type urlQueryEscapeWriter struct {
