@@ -1,39 +1,20 @@
 package formstr
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime/multipart"
 )
 
-type MultipartFormFile struct {
-	Fieldname string
-	Filename  string
-	Reader    io.Reader
+type MultipartFormValueEncoder interface {
+	Encode(ctx context.Context, mw *multipart.Writer) error
 }
 
-func (mff *MultipartFormFile) Create(mw *multipart.Writer) error {
-	w, err := mw.CreateFormFile(mff.Fieldname, mff.Filename)
-	if err != nil {
-		return err
-	}
-
-	_, err = io.Copy(w, mff.Reader)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-type MultipartFormEntry interface {
-	Create(mw *multipart.Writer) error
-}
-
-func CreateMultipartFormReader(entries []MultipartFormEntry) (io.Reader, string) {
+func CreateMultipartForm(ctx context.Context, values []MultipartFormValueEncoder) (io.Reader, string) {
 	pr, pw := io.Pipe()
 
-	writer := multipart.NewWriter(pw)
+	mw := multipart.NewWriter(pw)
 
 	go func() {
 		var err error
@@ -45,19 +26,52 @@ func CreateMultipartFormReader(entries []MultipartFormEntry) (io.Reader, string)
 			// https://www.rfc-editor.org/rfc/rfc2046#section-5.1
 			var closeErr error
 			if err == nil {
-				closeErr = writer.Close()
+				closeErr = mw.Close()
 			}
 			//nolint
 			pw.CloseWithError(errors.Join(err, closeErr))
 		}()
 
-		for _, entry := range entries {
-			err = entry.Create(writer)
+		for _, value := range values {
+			err = value.Encode(ctx, mw)
 			if err != nil {
 				return
 			}
 		}
 	}()
 
-	return pr, writer.FormDataContentType()
+	return pr, mw.FormDataContentType()
+}
+
+type MultipartFormFile struct {
+	Fieldname string
+	Filename  string
+	Reader    io.Reader
+}
+
+var _ MultipartFormValueEncoder = (*MultipartFormFile)(nil)
+
+func (mff *MultipartFormFile) Encode(ctx context.Context, mw *multipart.Writer) error {
+	w, err := mw.CreateFormFile(mff.Fieldname, mff.Filename)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(w, newContextReader(ctx, mff.Reader))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type MultipartFormField struct {
+	Fieldname string
+	Value     string
+}
+
+var _ MultipartFormValueEncoder = (*MultipartFormField)(nil)
+
+func (mff *MultipartFormField) Encode(ctx context.Context, mw *multipart.Writer) error {
+	return mw.WriteField(mff.Fieldname, mff.Value)
 }

@@ -2,6 +2,7 @@ package formstr
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"errors"
 	"io"
@@ -23,7 +24,7 @@ func TestCreateMultipartFormFilesReader(t *testing.T) {
 	_, err = rand.Read(file2Bytes)
 	assert.NoError(err)
 
-	body, contentType := CreateMultipartFormReader([]MultipartFormEntry{
+	body, contentType := CreateMultipartForm(context.Background(), []MultipartFormValueEncoder{
 		&MultipartFormFile{
 			Fieldname: "file1",
 			Filename:  "file1.txt",
@@ -90,7 +91,7 @@ func TestCreateMultipartFormFilesReader_error(t *testing.T) {
 
 	errReading := errors.New("reading")
 
-	body, contentType := CreateMultipartFormReader([]MultipartFormEntry{
+	body, contentType := CreateMultipartForm(context.Background(), []MultipartFormValueEncoder{
 		&MultipartFormFile{
 			Fieldname: "file1",
 			Filename:  "file1.txt",

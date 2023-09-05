@@ -89,15 +89,15 @@ func (fue *FormURLEncoder) EncodeR(ctx context.Context) io.Reader {
 	return pr
 }
 
-type FormURLEncoderValueReader struct {
+type FormURLValueReader struct {
 	r io.Reader
 }
 
-func NewFormURLEncoderValueReader(r io.Reader) *FormURLEncoderValueReader {
-	return &FormURLEncoderValueReader{r}
+func NewFormURLValueReader(r io.Reader) *FormURLValueReader {
+	return &FormURLValueReader{r}
 }
 
-func (f *FormURLEncoderValueReader) Encode(ctx context.Context, w io.Writer) error {
+func (f *FormURLValueReader) Encode(ctx context.Context, w io.Writer) error {
 	encoder := base64.NewEncoder(base64.StdEncoding, newURLQueryEscapeWriter(w))
 
 	_, err := io.Copy(encoder, newContextReader(ctx, f.r))
@@ -113,43 +113,43 @@ func (f *FormURLEncoderValueReader) Encode(ctx context.Context, w io.Writer) err
 	return nil
 }
 
-type FormURLEncoderValueString struct {
+type FormURLValueString struct {
 	s string
 }
 
-func NewFormURLEncoderValueString(s string) *FormURLEncoderValueString {
-	return &FormURLEncoderValueString{s}
+func NewFormURLValueString(s string) *FormURLValueString {
+	return &FormURLValueString{s}
 }
 
-func (f *FormURLEncoderValueString) Encode(ctx context.Context, w io.Writer) error {
+func (f *FormURLValueString) Encode(ctx context.Context, w io.Writer) error {
 	_, err := w.Write([]byte(url.QueryEscape(f.s)))
 
 	return err
 }
 
-type FormURLEncoderValueInt struct {
+type FormURLValueInt struct {
 	i int
 }
 
-func NewFormURLEncoderValueInt(i int) *FormURLEncoderValueInt {
-	return &FormURLEncoderValueInt{i}
+func NewFormURLValueInt(i int) *FormURLValueInt {
+	return &FormURLValueInt{i}
 }
 
-func (f *FormURLEncoderValueInt) Encode(ctx context.Context, w io.Writer) error {
+func (f *FormURLValueInt) Encode(ctx context.Context, w io.Writer) error {
 	_, err := w.Write([]byte(strconv.Itoa(f.i)))
 
 	return err
 }
 
-type FormURLEncoderValueBool struct {
+type FormURLValueBool struct {
 	b bool
 }
 
-func NewFormURLEncoderValueBool(b bool) *FormURLEncoderValueBool {
-	return &FormURLEncoderValueBool{b}
+func NewFormURLValueBool(b bool) *FormURLValueBool {
+	return &FormURLValueBool{b}
 }
 
-func (f *FormURLEncoderValueBool) Encode(ctx context.Context, w io.Writer) error {
+func (f *FormURLValueBool) Encode(ctx context.Context, w io.Writer) error {
 	_, err := w.Write([]byte(strconv.FormatBool(f.b)))
 
 	return err
@@ -167,22 +167,4 @@ func (w *urlQueryEscapeWriter) Write(p []byte) (int, error) {
 	escaped := url.QueryEscape(string(p))
 
 	return w.w.Write([]byte(escaped))
-}
-
-type contextReader struct {
-	ctx context.Context
-	r   io.Reader
-}
-
-func newContextReader(ctx context.Context, r io.Reader) *contextReader {
-	return &contextReader{ctx, r}
-}
-
-func (r *contextReader) Read(p []byte) (int, error) {
-	select {
-	case <-r.ctx.Done():
-		return 0, r.ctx.Err()
-	default:
-		return r.r.Read(p)
-	}
 }
